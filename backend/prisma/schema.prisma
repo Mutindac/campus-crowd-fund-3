@@ -1,0 +1,88 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  name          String
+  email         String   @unique
+  passwordHash  String   @map("password_hash")
+  walletAddress String   @map("wallet_address")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  campaigns Campaign[] @relation("CampaignCreator")
+
+  @@map("users")
+}
+
+model Campaign {
+  id                    Int      @id @default(autoincrement())
+  campaignId            Int      @unique @map("campaign_id")
+  creatorId             Int      @map("creator_id")
+  creator               User     @relation("CampaignCreator", fields: [creatorId], references: [id])
+  title                 String
+  description           String
+  goalKES               Int      @map("goal_kes")
+  goalAVAX              String   @map("goal_avax")
+  totalDonationsAVAX    String   @default("0") @map("total_donations_avax")
+  totalDonationsKES     Int      @default(0) @map("total_donations_kes")
+  conversionRate        Int      @map("conversion_rate")
+  conversionTimestamp   Int      @map("conversion_timestamp")
+  deadline              Int
+  goalReached           Boolean  @default(false) @map("goal_reached")
+  finalized             Boolean  @default(false)
+  donorCount            Int      @default(0) @map("donor_count")
+  milestonesCount       Int      @default(0) @map("milestones_count")
+  transactionHash       String?  @map("transaction_hash")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  donations Donation[]
+  milestones Milestone[]
+
+  @@map("campaigns")
+}
+
+model Donation {
+  id              Int      @id @default(autoincrement())
+  campaignId      Int      @map("campaign_id")
+  campaign        Campaign @relation(fields: [campaignId], references: [id])
+  donor           String
+  amountAVAX      String   @map("amount_avax")
+  amountKES       Int      @map("amount_kes")
+  timestamp       Int
+  transactionHash String   @map("transaction_hash")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("donations")
+}
+
+model Milestone {
+  id            Int      @id @default(autoincrement())
+  campaignId    Int      @map("campaign_id")
+  campaign      Campaign @relation(fields: [campaignId], references: [id])
+  index         Int
+  description   String
+  amountKES     Int      @map("amount_kes")
+  amountAVAX    String   @map("amount_avax")
+  released      Boolean  @default(false)
+  votesFor      Int      @default(0) @map("votes_for")
+  votesAgainst  Int      @default(0) @map("votes_against")
+  evidenceURI   String?  @map("evidence_uri")
+  proposedAt    Int      @default(0) @map("proposed_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@unique([campaignId, index])
+  @@map("milestones")
+}
+
