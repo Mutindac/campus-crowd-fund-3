@@ -5,9 +5,11 @@ import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { MilestoneCard } from '@/components/MilestoneCard';
 import { Campaign, Milestone, Donation } from '@/types/campaign';
 import { api } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   formatKES,
   formatAVAX,
@@ -32,12 +34,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const CampaignDetail = () => {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [donations, setDonations] = useState<Donation[]>([]);
   const [loading, setLoading] = useState(true);
   const [donationAmount, setDonationAmount] = useState('');
+  const [donorWalletAddress, setDonorWalletAddress] = useState('');
   const [donating, setDonating] = useState(false);
+
+  useEffect(() => {
+    // Pre-fill wallet address if user is logged in
+    if (user?.walletAddress) {
+      setDonorWalletAddress(user.walletAddress);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (id) {
@@ -60,8 +71,22 @@ const CampaignDetail = () => {
     }
   };
 
+  const validateWalletAddress = (address: string): boolean => {
+    return /^0x[a-fA-F0-9]{40}$/.test(address);
+  };
+
   const handleDonate = async () => {
     if (!campaign || !donationAmount) return;
+
+    if (!donorWalletAddress) {
+      toast.error('Please enter your Avalanche wallet address');
+      return;
+    }
+
+    if (!validateWalletAddress(donorWalletAddress)) {
+      toast.error('Invalid wallet address. Must be a valid 0x address.');
+      return;
+    }
 
     try {
       setDonating(true);
@@ -71,11 +96,8 @@ const CampaignDetail = () => {
         toast.error('Please enter a valid amount');
         return;
       }
-
-      // Demo: simulate wallet address
-      const demoWallet = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
       
-      await api.donate(campaign.campaignId, demoWallet, amount);
+      await api.donate(campaign.campaignId, donorWalletAddress, amount);
       
       toast.success('Donation successful!', {
         description: `You donated ${formatKES(amount)}`
@@ -315,10 +337,28 @@ const CampaignDetail = () => {
               </h3>
               
               <div className="mb-4">
-                <label className="text-sm font-medium text-foreground mb-2 block">
-                  Donation Amount (KES)
-                </label>
+                <Label htmlFor="donorWallet" className="mb-2 block">
+                  Your Avalanche Wallet Address *
+                </Label>
                 <Input
+                  id="donorWallet"
+                  type="text"
+                  placeholder="0x..."
+                  value={donorWalletAddress}
+                  onChange={(e) => setDonorWalletAddress(e.target.value)}
+                  className="mb-2 font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground mb-4">
+                  Your AVAX Core wallet address for this donation
+                </p>
+              </div>
+
+              <div className="mb-4">
+                <Label htmlFor="donationAmount" className="mb-2 block">
+                  Donation Amount (KES) *
+                </Label>
+                <Input
+                  id="donationAmount"
                   type="number"
                   placeholder="10,000"
                   value={donationAmount}
@@ -341,11 +381,6 @@ const CampaignDetail = () => {
                 {donating ? 'Processing...' : 'Donate Now'}
               </Button>
 
-              <div className="mt-4 p-3 bg-muted rounded-lg">
-                <p className="text-xs text-muted-foreground">
-                  💡 Demo mode: Donations are simulated. In production, this would connect to your MetaMask wallet.
-                </p>
-              </div>
             </Card>
 
             {/* Campaign Status */}

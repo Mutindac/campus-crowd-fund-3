@@ -1,9 +1,8 @@
 import { Campaign, Milestone, Donation, PriceData } from '@/types/campaign';
 
-// For demo purposes, we'll use mock data
-// In production, this would connect to the actual backend API
+// Connect to the actual backend API
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-const USE_MOCK_DATA = true; // Toggle for demo mode
+const USE_MOCK_DATA = false; // Set to false to use real backend data
 
 // Mock data generator
 const generateMockCampaigns = (): Campaign[] => {
@@ -126,7 +125,107 @@ const generateMockDonations = (campaignId: number): Donation[] => {
   }));
 };
 
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token && { Authorization: `Bearer ${token}` }),
+  };
+};
+
 export const api = {
+  // Authentication
+  async signup(params: {
+    name: string;
+    email: string;
+    password: string;
+    walletAddress: string;
+  }) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/signup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params)
+      });
+      
+      // Handle network errors
+      if (!response.ok && response.status === 0) {
+        throw new Error('CONNECTION_REFUSED');
+      }
+      
+      const data = await response.json();
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.error?.message || 'Sign up failed'
+        };
+      }
+      return data;
+    } catch (error: any) {
+      // Handle network/connection errors
+      if (error.message === 'CONNECTION_REFUSED' || error.message.includes('Failed to fetch') || error.message.includes('ERR_CONNECTION_REFUSED')) {
+        return {
+          success: false,
+          error: 'Backend server is not running. Please start the backend server on port 3001.'
+        };
+      }
+      throw error;
+    }
+  },
+
+  async login(email: string, password: string) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      
+      // Handle network errors (response.status is 0 when connection fails)
+      if (response.status === 0 || !response.ok) {
+        const errorText = await response.text().catch(() => '');
+        try {
+          const data = JSON.parse(errorText);
+          return {
+            success: false,
+            error: data.error?.message || 'Login failed'
+          };
+        } catch {
+          // If response is not JSON, it's a network error
+          return {
+            success: false,
+            error: 'Backend server is not running. Please start the backend server on port 3001.'
+          };
+        }
+      }
+      
+      const data = await response.json();
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.error?.message || 'Login failed'
+        };
+      }
+      return data;
+    } catch (error: any) {
+      // Handle network/connection errors
+      if (error.message?.includes('Failed to fetch') || 
+          error.message?.includes('ERR_CONNECTION_REFUSED') ||
+          error.message?.includes('NetworkError') ||
+          error.name === 'TypeError') {
+        return {
+          success: false,
+          error: 'Backend server is not running. Please start the backend server on port 3001.'
+        };
+      }
+      // Re-throw other errors
+      return {
+        success: false,
+        error: error.message || 'Login failed. Please try again.'
+      };
+    }
+  },
+
   // Price conversion
   async getPrice(): Promise<PriceData> {
     if (USE_MOCK_DATA) {
@@ -153,9 +252,23 @@ export const api = {
       return { campaigns: generateMockCampaigns() };
     }
     
-    const response = await fetch(`${API_BASE_URL}/campaigns`);
-    const data = await response.json();
-    return data.data;
+    try {
+      const response = await fetch(`${API_BASE_URL}/campaigns`);
+      if (!response.ok) {
+        // If not authenticated or no campaigns, return empty array
+        if (response.status === 401 || response.status === 404) {
+          return { campaigns: [] };
+        }
+        throw new Error('Failed to fetch campaigns');
+      }
+      const data = await response.json();
+      // Handle both { data: { campaigns: [] } } and { campaigns: [] } formats
+      return data.data?.campaigns ? data.data : { campaigns: data.campaigns || [] };
+    } catch (error) {
+      console.error('Error fetching campaigns:', error);
+      // Return empty array on error instead of throwing
+      return { campaigns: [] };
+    }
   },
 
   async getCampaign(id: number): Promise<{ campaign: Campaign; milestones: Milestone[]; donations: Donation[] }> {
@@ -197,7 +310,7 @@ export const api = {
     
     const response = await fetch(`${API_BASE_URL}/campaigns`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(params)
     });
     return response.json();
@@ -217,7 +330,7 @@ export const api = {
     
     const response = await fetch(`${API_BASE_URL}/campaigns/${campaignId}/donate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify({ donor, amountKES })
     });
     return response.json();

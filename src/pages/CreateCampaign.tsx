@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { api } from '@/lib/api';
 import { formatKES } from '@/lib/formatters';
+import { useAuth } from '@/contexts/AuthContext';
 import { ArrowLeft, Plus, Trash2, Save, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -17,6 +18,7 @@ interface MilestoneInput {
 
 const CreateCampaign = () => {
   const navigate = useNavigate();
+  const { user, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(false);
   
   const [formData, setFormData] = useState({
@@ -29,6 +31,12 @@ const CreateCampaign = () => {
   const [milestones, setMilestones] = useState<MilestoneInput[]>([
     { description: '', amountKES: '' }
   ]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login?redirect=/create');
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -88,14 +96,18 @@ const CreateCampaign = () => {
       return;
     }
 
+    if (!user || !user.walletAddress) {
+      toast.error('Please ensure you have a wallet address in your account');
+      return;
+    }
+
     try {
       setLoading(true);
 
-      const demoCreator = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb';
       const deadlineTimestamp = Math.floor(new Date(formData.deadline).getTime() / 1000);
 
       const result = await api.createCampaign({
-        creator: demoCreator,
+        creator: user.walletAddress,
         title: formData.title,
         description: formData.description,
         goalKES: parseFloat(formData.goalKES),

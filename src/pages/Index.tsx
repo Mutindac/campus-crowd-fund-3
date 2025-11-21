@@ -21,9 +21,10 @@ const Index = () => {
     try {
       setLoading(true);
       const data = await api.getCampaigns();
-      setCampaigns(data.campaigns);
+      setCampaigns(data.campaigns || []);
     } catch (error) {
       console.error('Failed to load campaigns:', error);
+      setCampaigns([]); // Set empty array on error
     } finally {
       setLoading(false);
     }
@@ -49,7 +50,7 @@ const Index = () => {
               Transparent, blockchain-secured fundraising for robotics clubs, hackathons, and campus projects. Every Shilling tracked, every milestone verified.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link to="/create">
+              <Link to="/login?redirect=/create">
                 <Button size="lg" variant="secondary" className="gap-2 shadow-lg">
                   <Plus className="h-5 w-5" />
                   Start a Campaign
@@ -146,16 +147,30 @@ const Index = () => {
               ))}
             </div>
           ) : filteredCampaigns.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-muted-foreground mb-4">
-                {searchQuery ? 'No campaigns match your search' : 'No active campaigns yet'}
-              </p>
-              <Link to="/create">
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Create First Campaign
-                </Button>
-              </Link>
+            <div className="text-center py-16">
+              <div className="max-w-md mx-auto">
+                <div className="mb-6">
+                  <div className="h-24 w-24 mx-auto rounded-full bg-muted flex items-center justify-center mb-4">
+                    <TrendingUp className="h-12 w-12 text-muted-foreground" />
+                  </div>
+                </div>
+                <h3 className="text-xl font-semibold text-foreground mb-2">
+                  {searchQuery ? 'No campaigns found' : 'No campaigns yet'}
+                </h3>
+                <p className="text-muted-foreground mb-6">
+                  {searchQuery 
+                    ? 'Try adjusting your search terms' 
+                    : 'Be the first to create a campaign! Made donations will be seen here once campaigns are created.'}
+                </p>
+                {!searchQuery && (
+                  <Link to="/login?redirect=/create">
+                    <Button size="lg" className="gap-2">
+                      <Plus className="h-5 w-5" />
+                      Create First Campaign
+                    </Button>
+                  </Link>
+                )}
+              </div>
             </div>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
