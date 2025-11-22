@@ -20,6 +20,8 @@ router.get('/', async (req, res, next) => {
       },
     });
 
+    console.log(`📊 Found ${campaigns.length} campaigns in database`);
+
     // Transform to match frontend Campaign interface
     const formattedCampaigns = campaigns.map(campaign => {
       const progress = campaign.goalKES > 0 
@@ -29,7 +31,7 @@ router.get('/', async (req, res, next) => {
 
       return {
         campaignId: campaign.campaignId,
-        creator: campaign.creator.walletAddress,
+        creator: campaign.creator?.walletAddress || campaign.creatorId?.toString() || '0x0000000000000000000000000000000000000000',
         title: campaign.title,
         description: campaign.description,
         goalKES: campaign.goalKES,
@@ -48,11 +50,14 @@ router.get('/', async (req, res, next) => {
       };
     });
 
+    console.log(`✅ Returning ${formattedCampaigns.length} formatted campaigns`);
+
     res.json({ 
       success: true, 
       data: { campaigns: formattedCampaigns } 
     });
   } catch (error) {
+    console.error('❌ Error fetching campaigns:', error);
     next(error);
   }
 });
@@ -60,6 +65,14 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const campaignId = parseInt(req.params.id);
+    console.log(`📡 Fetching campaign ID: ${campaignId}`);
+    
+    if (isNaN(campaignId)) {
+      return res.status(400).json({
+        success: false,
+        error: { code: 'INVALID_ID', message: 'Invalid campaign ID' },
+      });
+    }
     
     const campaign = await prisma.campaign.findUnique({
       where: { campaignId },
@@ -80,11 +93,14 @@ router.get('/:id', async (req, res, next) => {
     });
 
     if (!campaign) {
+      console.log(`❌ Campaign ${campaignId} not found`);
       return res.status(404).json({
         success: false,
         error: { code: 'NOT_FOUND', message: 'Campaign not found' },
       });
     }
+    
+    console.log(`✅ Found campaign: ${campaign.title}`);
 
     // Transform milestones
     const formattedMilestones = campaign.milestones.map(m => ({
@@ -124,7 +140,7 @@ router.get('/:id', async (req, res, next) => {
 
     const formattedCampaign = {
       campaignId: campaign.campaignId,
-      creator: campaign.creator.walletAddress,
+      creator: campaign.creator?.walletAddress || '0x0000000000000000000000000000000000000000',
       title: campaign.title,
       description: campaign.description,
       goalKES: campaign.goalKES,
@@ -158,16 +174,102 @@ router.get('/:id', async (req, res, next) => {
 // POST routes require authentication
 router.post('/', authenticate, async (req, res, next) => {
   try {
-    // TODO: Implement create campaign with smart contract interaction
-    // For now, return a placeholder
-    res.json({ 
-      success: true, 
-      data: { 
-        campaignId: 0,
-        message: 'Campaign creation endpoint - implement smart contract interaction'
-      } 
+    const { title, description, goalKES, deadline, milestones } = req.body;
+    const userId = req.user.id;
+
+    console.log('📝 Creating campaign:', { title, userId, milestonesCount: milestones?.length });
+
+    // Validation
+    if (!title || !description || !goalKES || !deadline || !milestones || !Array.isArray(milestones)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Missing required fields: title, description, goalKES, deadline, milestones'
+        }
+      });
+    }
+
+    if (milestones.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'At least one milestone is required'
+        }
+      });
+    }
+
+    // Calculate conversion (using fallback rate for now)
+    const conversionRate = parseInt(process.env.FALLBACK_KES_PER_AVAX) || 146500;
+    const goalAVAX = (parseFloat(goalKES) / conversionRate).toFixed(12);
+
+    // Calculate total milestone amounts
+    const totalMilestoneKES = milestones.reduce((sum, m) => sum + parseFloat(m.amountKES || 0), 0);
+    
+    // Validate milestone total matches goal (allow 1 KES difference for rounding)
+    if (Math.abs(totalMilestoneKES - parseFloat(goalKES)) > 1) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: `Milestone total (${totalMilestoneKES}) must equal campaign goal (${goalKES})`
+        }
+      });
+    }
+
+    // Get the next campaignId (find max and add 1, or start at 0)
+    const maxCampaign = await prisma.campaign.findFirst({
+      orderBy: { campaignId: 'desc' },
+      select: { campaignId: true }
+    });
+    const nextCampaignId = maxCampaign ? maxCampaign.campaignId + 1 : 0;
+
+    console.log(`📊 Next campaign ID: ${nextCampaignId}`);
+
+    // Create campaign in database with milestones
+    const campaign = await prisma.campaign.create({
+      data: {
+        campaignId: nextCampaignId,
+        creatorId: userId,
+        title: title.trim(),
+        description: description.trim(),
+        goalKES: parseInt(goalKES),
+        goalAVAX,
+        conversionRate,
+        conversionTimestamp: Math.floor(Date.now() / 1000),
+        deadline: parseInt(deadline),
+        milestonesCount: milestones.length,
+        milestones: {
+          create: milestones.map((milestone, index) => ({
+            index,
+            description: milestone.description.trim(),
+            amountKES: parseInt(milestone.amountKES),
+            amountAVAX: (parseFloat(milestone.amountKES) / conversionRate).toFixed(12),
+          }))
+        }
+      },
+      include: {
+        creator: {
+          select: {
+            name: true,
+            walletAddress: true,
+          }
+        }
+      }
+    });
+
+    console.log(`✅ Campaign created: ${campaign.title} (ID: ${campaign.campaignId})`);
+
+    res.status(201).json({
+      success: true,
+      data: {
+        campaignId: campaign.campaignId,
+        message: 'Campaign created successfully'
+      }
     });
   } catch (error) {
+    console.error('❌ Error creating campaign:', error);
     next(error);
   }
 });

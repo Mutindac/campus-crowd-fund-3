@@ -253,19 +253,30 @@ export const api = {
     }
     
     try {
+      console.log('📡 Fetching campaigns from:', `${API_BASE_URL}/campaigns`);
       const response = await fetch(`${API_BASE_URL}/campaigns`);
+      
       if (!response.ok) {
+        console.error('❌ Campaign fetch failed:', response.status, response.statusText);
         // If not authenticated or no campaigns, return empty array
         if (response.status === 401 || response.status === 404) {
           return { campaigns: [] };
         }
-        throw new Error('Failed to fetch campaigns');
+        const errorText = await response.text().catch(() => '');
+        console.error('Error response:', errorText);
+        return { campaigns: [] };
       }
+      
       const data = await response.json();
+      console.log('✅ Campaign data received:', data);
+      
       // Handle both { data: { campaigns: [] } } and { campaigns: [] } formats
-      return data.data?.campaigns ? data.data : { campaigns: data.campaigns || [] };
+      const campaigns = data.data?.campaigns || data.campaigns || [];
+      console.log(`📊 Parsed ${campaigns.length} campaigns`);
+      
+      return { campaigns };
     } catch (error) {
-      console.error('Error fetching campaigns:', error);
+      console.error('❌ Error fetching campaigns:', error);
       // Return empty array on error instead of throwing
       return { campaigns: [] };
     }
@@ -284,9 +295,47 @@ export const api = {
       };
     }
     
-    const response = await fetch(`${API_BASE_URL}/campaigns/${id}`);
-    const data = await response.json();
-    return data.data;
+    try {
+      console.log('📡 Fetching campaign:', id, 'from', `${API_BASE_URL}/campaigns/${id}`);
+      const response = await fetch(`${API_BASE_URL}/campaigns/${id}`);
+      
+      if (!response.ok) {
+        console.error('❌ Campaign fetch failed:', response.status, response.statusText);
+        if (response.status === 404) {
+          throw new Error('Campaign not found');
+        }
+        const errorText = await response.text().catch(() => '');
+        console.error('Error response:', errorText);
+        throw new Error(`Failed to fetch campaign: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ Campaign data received:', data);
+      
+      // Backend returns: { success: true, data: { campaign, milestones, donations } }
+      if (data.success && data.data) {
+        console.log('📊 Campaign found:', data.data.campaign?.title);
+        return {
+          campaign: data.data.campaign,
+          milestones: data.data.milestones || [],
+          donations: data.data.donations || []
+        };
+      }
+      
+      // Fallback for different response formats
+      if (data.campaign) {
+        return {
+          campaign: data.campaign,
+          milestones: data.milestones || [],
+          donations: data.donations || []
+        };
+      }
+      
+      throw new Error('Invalid response format from server');
+    } catch (error) {
+      console.error('❌ Error fetching campaign:', error);
+      throw error;
+    }
   },
 
   async createCampaign(params: {

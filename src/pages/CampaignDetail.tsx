@@ -60,12 +60,19 @@ const CampaignDetail = () => {
     try {
       setLoading(true);
       const data = await api.getCampaign(campaignId);
+      
+      if (!data || !data.campaign) {
+        console.error('Invalid campaign data received:', data);
+        toast.error('Campaign not found');
+        return;
+      }
+      
       setCampaign(data.campaign);
-      setMilestones(data.milestones);
-      setDonations(data.donations);
-    } catch (error) {
+      setMilestones(data.milestones || []);
+      setDonations(data.donations || []);
+    } catch (error: any) {
       console.error('Failed to load campaign:', error);
-      toast.error('Failed to load campaign');
+      toast.error(error?.message || 'Failed to load campaign');
     } finally {
       setLoading(false);
     }
@@ -164,19 +171,28 @@ const CampaignDetail = () => {
     );
   }
 
-  if (!campaign) {
+  if (!loading && !campaign) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+        <div className="text-center max-w-md">
+          <AlertCircle className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-foreground mb-2">Campaign Not Found</h2>
-          <p className="text-muted-foreground mb-4">The campaign you're looking for doesn't exist</p>
-          <Link to="/">
-            <Button>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Campaigns
-            </Button>
-          </Link>
+          <p className="text-muted-foreground mb-6">
+            The campaign you're looking for doesn't exist or may have been removed.
+          </p>
+          <div className="flex gap-4 justify-center">
+            <Link to="/">
+              <Button>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to Campaigns
+              </Button>
+            </Link>
+            <Link to="/create">
+              <Button variant="outline">
+                Create New Campaign
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
     );
