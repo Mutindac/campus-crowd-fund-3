@@ -104,14 +104,32 @@ const CampaignDetail = () => {
         return;
       }
       
-      await api.donate(campaign.campaignId, donorWalletAddress, amount);
+      const result = await api.donate(campaign.campaignId, donorWalletAddress, amount);
       
-      toast.success('Donation successful!', {
-        description: `You donated ${formatKES(amount)}`
-      });
-      
-      setDonationAmount('');
-      loadCampaign(campaign.campaignId);
+      if (result && result.success) {
+        toast.success('Donation successful!', {
+          description: `You donated ${formatKES(amount)}`
+        });
+        
+        setDonationAmount('');
+        
+        // Update campaign state immediately with new totals
+        if (result.data) {
+          setCampaign(prev => prev ? {
+            ...prev,
+            totalDonationsKES: result.data.totalDonationsKES,
+            totalDonationsAVAX: result.data.totalDonationsAVAX,
+            donorCount: prev.donorCount + (prev.donations?.some(d => d.donor.toLowerCase() === donorWalletAddress.toLowerCase()) ? 0 : 1),
+            goalReached: result.data.goalReached || false,
+            progress: result.data.newProgress || ((result.data.totalDonationsKES / prev.goalKES) * 100)
+          } : prev);
+        }
+        
+        // Reload campaign to get fresh data including donations list
+        await loadCampaign(campaign.campaignId);
+      } else {
+        toast.error(result?.error || 'Donation failed');
+      }
     } catch (error) {
       console.error('Donation failed:', error);
       toast.error('Donation failed');
@@ -199,7 +217,10 @@ const CampaignDetail = () => {
   }
 
   const daysLeft = calculateDaysRemaining(campaign.deadline);
-  const progress = campaign.progress || 0;
+  // Calculate progress from current totals (in case progress field is not set)
+  const progress = campaign.progress !== undefined 
+    ? campaign.progress 
+    : (campaign.goalKES > 0 ? (campaign.totalDonationsKES / campaign.goalKES) * 100 : 0);
 
   return (
     <div className="min-h-screen bg-background">

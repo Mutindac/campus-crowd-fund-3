@@ -276,15 +276,117 @@ router.post('/', authenticate, async (req, res, next) => {
 
 router.post('/:id/donate', authenticate, async (req, res, next) => {
   try {
-    // TODO: Implement donate with smart contract interaction
-    res.json({ 
-      success: true, 
-      data: { 
-        transactionHash: '0x...',
-        message: 'Donation endpoint - implement smart contract interaction'
-      } 
+    const campaignId = parseInt(req.params.id);
+    const { donor, amountKES } = req.body;
+
+    console.log(`💰 Donation received: ${amountKES} KES to campaign ${campaignId} from ${donor}`);
+
+    // Validation
+    if (!donor || !amountKES) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Missing required fields: donor, amountKES'
+        }
+      });
+    }
+
+    if (isNaN(campaignId)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_ID',
+          message: 'Invalid campaign ID'
+        }
+      });
+    }
+
+    const amount = parseFloat(amountKES);
+    if (amount <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Donation amount must be greater than 0'
+        }
+      });
+    }
+
+    // Find campaign
+    const campaign = await prisma.campaign.findUnique({
+      where: { campaignId },
+      include: {
+        donations: true
+      }
+    });
+
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Campaign not found'
+        }
+      });
+    }
+
+    // Calculate conversion
+    const conversionRate = campaign.conversionRate;
+    const amountAVAX = (amount / conversionRate).toFixed(12);
+
+    // Check if this is a new donor (check if this donor has donated before)
+    const existingDonations = campaign.donations.filter(d => d.donor.toLowerCase() === donor.toLowerCase());
+    const isNewDonor = existingDonations.length === 0;
+    const newDonorCount = isNewDonor ? campaign.donorCount + 1 : campaign.donorCount;
+
+    // Update campaign totals
+    const newTotalKES = campaign.totalDonationsKES + parseInt(amount);
+    const newTotalAVAX = (parseFloat(campaign.totalDonationsAVAX) + parseFloat(amountAVAX)).toFixed(12);
+    const goalReached = newTotalKES >= campaign.goalKES;
+
+    // Create donation record
+    const donation = await prisma.donation.create({
+      data: {
+        campaignId: campaign.id,
+        donor,
+        amountKES: parseInt(amount),
+        amountAVAX,
+        timestamp: Math.floor(Date.now() / 1000),
+        transactionHash: `0x${Math.random().toString(16).slice(2, 66)}` // Placeholder - replace with real tx hash
+      }
+    });
+
+    // Update campaign
+    const updatedCampaign = await prisma.campaign.update({
+      where: { id: campaign.id },
+      data: {
+        totalDonationsKES: newTotalKES,
+        totalDonationsAVAX: newTotalAVAX,
+        donorCount: newDonorCount,
+        goalReached
+      }
+    });
+
+    console.log(`✅ Donation saved: ${amountKES} KES (${amountAVAX} AVAX) to campaign ${campaignId}`);
+    console.log(`📊 Campaign progress: ${newTotalKES}/${campaign.goalKES} KES (${((newTotalKES / campaign.goalKES) * 100).toFixed(2)}%)`);
+
+    res.json({
+      success: true,
+      data: {
+        transactionHash: donation.transactionHash,
+        donor,
+        amountKES: parseInt(amount),
+        amountAVAX,
+        campaignId,
+        totalDonationsAVAX: newTotalAVAX,
+        totalDonationsKES: newTotalKES,
+        newProgress: (newTotalKES / campaign.goalKES) * 100,
+        goalReached
+      }
     });
   } catch (error) {
+    console.error('❌ Error processing donation:', error);
     next(error);
   }
 });

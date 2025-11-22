@@ -377,12 +377,38 @@ export const api = {
       };
     }
     
-    const response = await fetch(`${API_BASE_URL}/campaigns/${campaignId}/donate`, {
-      method: 'POST',
-      headers: getAuthHeaders(),
-      body: JSON.stringify({ donor, amountKES })
-    });
-    return response.json();
+    try {
+      console.log(`💰 Donating ${amountKES} KES to campaign ${campaignId} from ${donor}`);
+      const response = await fetch(`${API_BASE_URL}/campaigns/${campaignId}/donate`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ donor, amountKES })
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return {
+          success: false,
+          error: errorData.error?.message || 'Donation failed'
+        };
+      }
+      
+      const data = await response.json();
+      console.log('✅ Donation successful:', data);
+      return data;
+    } catch (error: any) {
+      console.error('❌ Donation error:', error);
+      if (error.message?.includes('Failed to fetch') || error.message?.includes('ERR_CONNECTION_REFUSED')) {
+        return {
+          success: false,
+          error: 'Backend server is not running. Please start the backend server on port 3001.'
+        };
+      }
+      return {
+        success: false,
+        error: error.message || 'Donation failed. Please try again.'
+      };
+    }
   },
 
   async proposeMilestone(campaignId: number, milestoneIndex: number, creator: string, evidenceURI: string) {
